@@ -228,4 +228,3 @@ int IonAlloc::clean_buffer(void *base, size_t size, int offset, int fd, int op)
     ioctl(mIonFd, ION_IOC_FREE, &handle_data);
     return 0;
 }
-

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
- * Copyright (c) 2011-2013 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2012 The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@
 #include <fcntl.h>
 #include <cutils/properties.h>
 #include <sys/mman.h>
+
+#include <genlock.h>
 
 #include "gr.h"
 #include "gpu.h"
@@ -89,8 +91,11 @@ int gpu_context_t::gralloc_alloc_buffer(size_t size, int usage,
         eData.align = getpagesize();
         int eDataUsage = GRALLOC_USAGE_PRIVATE_SYSTEM_HEAP;
         int eDataErr = mAllocCtrl->allocate(eData, eDataUsage);
-        ALOGE_IF(eDataErr, "gralloc failed for eDataErr=%s",
-                                          strerror(-eDataErr));
+        ALOGE_IF(eDataErr, "gralloc failed for eData err=%s", strerror(-err));
+
+        if (usage & GRALLOC_USAGE_PRIVATE_UNSYNCHRONIZED) {
+            flags |= private_handle_t::PRIV_FLAGS_UNSYNCHRONIZED;
+        }
 
         if (usage & GRALLOC_USAGE_PRIVATE_EXTERNAL_ONLY) {
             flags |= private_handle_t::PRIV_FLAGS_EXTERNAL_ONLY;
@@ -148,8 +153,6 @@ int gpu_context_t::gralloc_alloc_buffer(size_t size, int usage,
 
         hnd->offset = data.offset;
         hnd->base = int(data.base) + data.offset;
-        hnd->gpuaddr = 0;
-
         *pHandle = hnd;
     }
 
@@ -278,7 +281,7 @@ int gpu_context_t::alloc_impl(int w, int h, int format, int usage,
         (usage & GRALLOC_USAGE_PROTECTED)) {
         bufferType = BUFFER_TYPE_VIDEO;
     }
-
+    
     bool useFbMem = false;
     char property[PROPERTY_VALUE_MAX];
     if((usage & GRALLOC_USAGE_HW_FB) &&
@@ -300,12 +303,20 @@ int gpu_context_t::alloc_impl(int w, int h, int format, int usage,
         return err;
     }
 
+    // Create a genlock lock for this buffer handle.
+    err = genlock_create_lock((native_handle_t*)(*pHandle));
+    if (err) {
+        ALOGE("%s: genlock_create_lock failed", __FUNCTION__);
+        free_impl(reinterpret_cast<private_handle_t*>(pHandle));
+        return err;
+    }
     *pStride = alignedw;
     return 0;
 }
 
 int gpu_context_t::free_impl(private_handle_t const* hnd) {
     private_module_t* m = reinterpret_cast<private_module_t*>(common.module);
+
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
         const size_t bufferSize = m->finfo.line_length * m->info.yres;
         int index = (hnd->base - m->framebuffer->base) / bufferSize;
@@ -326,6 +337,13 @@ int gpu_context_t::free_impl(private_handle_t const* hnd) {
         if (err)
             return err;
     }
+
+    // Release the genlock
+    int err = genlock_release_lock((native_handle_t*)hnd);
+    if (err) {
+        ALOGE("%s: genlock_release_lock failed", __FUNCTION__);
+    }
+
     delete hnd;
     return 0;
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,14 @@ enum {
      * cannot be used with noncontiguous heaps */
     GRALLOC_USAGE_PRIVATE_UNCACHED        =       0x02000000,
 
+    /* This flag can be set to disable genlock synchronization
+     * for the gralloc buffer. If this flag is set the caller
+     * is required to perform explicit synchronization.
+     * WARNING - flag is outside the standard PRIVATE region
+     * and may need to be moved if the gralloc API changes
+     */
+    GRALLOC_USAGE_PRIVATE_UNSYNCHRONIZED  =       0X04000000,
+
     /* Buffer content should be displayed on an primary display only */
     GRALLOC_USAGE_PRIVATE_INTERNAL_ONLY   =       0x04000000,
 
@@ -68,8 +76,12 @@ enum {
     /* Close Caption displayed on an external display only */
     GRALLOC_USAGE_PRIVATE_EXTERNAL_CC     =       0x00200000,
 
-    /* CAMERA heap is a carveout heap for camera, is not secured*/
-    GRALLOC_USAGE_PRIVATE_CAMERA_HEAP     =       0x00400000,
+    /* Use this flag to request content protected buffers. Please note
+     * that this flag is different from the GRALLOC_USAGE_PROTECTED flag
+     * which can be used for buffers that are not secured for DRM
+     * but still need to be protected from screen captures
+     */
+    GRALLOC_USAGE_PRIVATE_CP_BUFFER       =       0x00400000,
 };
 
 enum {
@@ -165,6 +177,8 @@ struct private_handle_t : public native_handle {
 
         // file-descriptors
         int     fd;
+        // genlock handle to be dup'd by the binder
+        int     genlockHandle;
         int     fd_metadata;          // fd for the meta-data
         // ints
         int     magic;
@@ -175,24 +189,28 @@ struct private_handle_t : public native_handle {
         int     base;
         int     offset_metadata;
         // The gpu address mapped into the mmu.
+        // If using ashmem, set to 0, they don't care
         int     gpuaddr;
+        int     pid;   // deprecated
         int     format;
         int     width;
         int     height;
+        // local fd of the genlock device.
+        int     genlockPrivFd;
         int     base_metadata;
 
 #ifdef __cplusplus
-        static const int sNumInts = 12;
-        static const int sNumFds = 2;
+        static const int sNumInts = 14;
+        static const int sNumFds = 3;
         static const int sMagic = 'gmsm';
 
         private_handle_t(int fd, int size, int flags, int bufferType,
                          int format,int width, int height, int eFd = -1,
                          int eOffset = 0, int eBase = 0) :
-            fd(fd), fd_metadata(eFd), magic(sMagic),
+            fd(fd), genlockHandle(-1), fd_metadata(eFd), magic(sMagic),
             flags(flags), size(size), offset(0), bufferType(bufferType),
-            base(0), offset_metadata(eOffset), gpuaddr(0),
-            format(format), width(width), height(height),
+            base(0), offset_metadata(eOffset), gpuaddr(0), pid(getpid()),
+            format(format), width(width), height(height), genlockPrivFd(-1),
             base_metadata(eBase)
         {
             version = sizeof(native_handle);

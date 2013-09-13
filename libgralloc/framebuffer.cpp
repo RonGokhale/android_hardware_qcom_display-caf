@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2010-2013 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2012 The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@
 #include "gralloc_priv.h"
 #include "fb_priv.h"
 #include "gr.h"
+#include <genlock.h>
 #include <cutils/properties.h>
 #include <profiler.h>
 
@@ -316,7 +317,7 @@ int mapFrameBufferLocked(struct private_module_t* module)
     size_t fbSize = roundUpToPageSize(finfo.line_length * info.yres)*
                     module->numBuffers;
     module->framebuffer = new private_handle_t(fd, fbSize,
-                                        private_handle_t::PRIV_FLAGS_USES_ION,
+                                        private_handle_t::PRIV_FLAGS_USES_PMEM,
                                         BUFFER_TYPE_UI,
                                         module->fbFormat, info.xres, info.yres);
     void* vaddr = mmap(0, fbSize, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
@@ -354,7 +355,9 @@ static int fb_close(struct hw_device_t *dev)
 {
     fb_context_t* ctx = (fb_context_t*)dev;
     if (ctx) {
-        free(ctx);
+        //Hack until fbdev is removed. Framework could close this causing hwc a
+        //pain.
+        //free(ctx);
     }
     return 0;
 }

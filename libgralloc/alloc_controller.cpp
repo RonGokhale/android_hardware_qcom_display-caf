@@ -45,6 +45,10 @@
 #define VENUS_BUFFER_SIZE(args...) 0
 #endif
 
+#ifndef ION_ADSP_HEAP_ID
+#define ION_ADSP_HEAP_ID ION_CAMERA_HEAP_ID
+#endif
+
 using namespace gralloc;
 using namespace qdutils;
 
@@ -54,15 +58,11 @@ ANDROID_SINGLETON_STATIC_INSTANCE(AdrenoMemInfo);
 static bool canFallback(int usage, bool triedSystem)
 {
     // Fallback to system heap when alloc fails unless
-    // 1. Composition type is MDP
-    // 2. Alloc from system heap was already tried
-    // 3. The heap type is requsted explicitly
-    // 4. The heap type is protected
-    // 5. The buffer is meant for external display only
+    // 1. Alloc from system heap was already tried
+    // 2. The heap type is requsted explicitly
+    // 3. The heap type is protected
+    // 4. The buffer is meant for external display only
 
-    if(QCCompositionType::getInstance().getCompositionType() &
-       COMPOSITION_TYPE_MDP)
-        return false;
     if(triedSystem)
         return false;
     if(usage & (GRALLOC_HEAP_MASK | GRALLOC_USAGE_PROTECTED))
@@ -75,9 +75,10 @@ static bool canFallback(int usage, bool triedSystem)
 
 static bool useUncached(int usage)
 {
-    if (usage & GRALLOC_USAGE_PRIVATE_UNCACHED ||
-        usage & GRALLOC_USAGE_SW_WRITE_RARELY  ||
-        usage & GRALLOC_USAGE_SW_READ_RARELY)
+    // System heaps cannot be uncached
+    if(usage & GRALLOC_USAGE_PRIVATE_SYSTEM_HEAP)
+        return false;
+    if (usage & GRALLOC_USAGE_PRIVATE_UNCACHED)
         return true;
     return false;
 }
@@ -214,9 +215,6 @@ int IonController::allocate(alloc_data& data, int usage)
                                 trying to use IOMMU instead !!");
         ionFlags |= ION_HEAP(ION_IOMMU_HEAP_ID);
     }
-
-    if(usage & GRALLOC_USAGE_PRIVATE_CAMERA_HEAP)
-        ionFlags |= ION_HEAP(ION_CAMERA_HEAP_ID);
 
     if(usage & GRALLOC_USAGE_PRIVATE_ADSP_HEAP)
         ionFlags |= ION_HEAP(ION_ADSP_HEAP_ID);
